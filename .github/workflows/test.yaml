@@ -2,45 +2,27 @@ name: Fake Build
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches:
-  #     - main
+  
+  
+  
 
 jobs:
   build-windows:
+
+    outputs:
+      upload_url_base64: ${{ steps.b64encode_upload_url.outputs.upload_url_base64 }}
+
     runs-on: windows-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v1.0.2  #using Microsoft's setup-msbuild action
-
 
 
     - name: update version number
       run: |
-        echo 1.0.10.2 > AzerothAuctionAssassin-windows\AzerothAuctionAssassin\Resources\appVersion.txt
-    # - name: Build EXE
-    #   run: |
-    #     msbuild AzerothAuctionAssassin-windows\AzerothAuctionAssassin.sln -restore -t:Publish /p:Configuration=Release /p:PublishProfile=".\AzerothAuctionAssassin\Properties\PublishProfiles\FolderProfile.pubxml"
-    # - name: Decode Certificate
-    #   run: |
-    #     $cert_content = '${{ secrets.CERT_BASE64 }}'
-    #     $cert_bytes = [Convert]::FromBase64String($cert_content)
-    #     $cert_path = "certificate.pfx"
-    #     [IO.File]::WriteAllBytes($cert_path, $cert_bytes)
-    #   shell: pwsh
-
-    # - name: Sign Executable
-    #   run: |
-    #     $cert_path = "certificate.pfx"
-    #     $password = "${{ secrets.CERT_PASSWORD }}"
-    #     $timestamp_url = "http://timestamp.digicert.com"
-    #     $executable_path = ".\AzerothAuctionAssassin-windows\AzerothAuctionAssassin\bin\Release\net8.0-windows\publish\win-x86\AzerothAuctionAssassin.exe"
-    #     $signtoolPath = Resolve-Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
-    #     & $signtoolPath sign /f $cert_path /p $password /tr $timestamp_url /td sha256 /fd sha256 /v $executable_path
-    #   shell: pwsh
+        echo 1.0.10.777 > AzerothAuctionAssassin-windows\AzerothAuctionAssassin\Resources\appVersion.txt
+    
 
     - name: Create Release
       id: create_release
@@ -48,38 +30,14 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: v1.0.10.2
-        release_name: Release v1.0.10.2
-        draft: true
-        prerelease: true
+        tag_name: v1.0.10.777
+        release_name: Release v1.0.10.777
+        draft: false
+        prerelease: false
 
-    - name: Update FB Token
-      uses: actions/github-script@v6
-      env:
-        FACEBOOK_TOKEN: ${{ steps.create_release.outputs.upload_url }}
-      with:
-        result-encoding: string
-        github-token: ${{ env.GITHUB_TOKEN }}
-        script: |
-          const sodium = require('sodium-native');
-          const { data: {key: publicKey, key_id: keyId} } = await github.rest.actions.getRepoPublicKey({...context.repo});
-          if (publicKey) {
-            const key = Buffer.from(publicKey, 'base64');
-            const message = Buffer.from(process.env.FACEBOOK_TOKEN);
-            const ciphertext = Buffer.alloc(message.length + sodium.crypto_box_SEALBYTES);
-
-            sodium.crypto_box_seal(ciphertext, message, key);
-            const encryptedToken = ciphertext.toString('base64');
-
-            await github.rest.actions.createOrUpdateRepoSecret({
-              ...context.repo, 
-              secret_name: 'FACEBOOK_TOKEN',
-              encrypted_value: encryptedToken,
-              key_id: keyId,
-            });
-          } else {
-            core.error('Failed to fetch the public key. Unable to update secret');
-          }
+    - name: Encode and Save Upload URL as Base64
+      id: b64encode_upload_url
+      run: echo "::set-output name=upload_url_base64::$(echo -n '${{ steps.create_release.outputs.upload_url }}' | base64 --wrap=0)"
 
     - name: Upload Executable to Release
       uses: actions/upload-release-asset@v1
@@ -98,45 +56,17 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
-
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.11
-
-
-    # - name: Build macOS executable
-    #   run: |
-    #     python -m pip install pyinstaller
-    #     pyinstaller --onefile --add-data "AzerothAuctionAssassinData:./AzerothAuctionAssassinData" --add-data "utils:./utils" AzerothAuctionAssassin.py
-    # - name: Decode macOS Certificate
-    #   run: |
-    #     echo "${{ secrets.CERT_BASE64 }}" | base64 -d > certificate.p12
-    # ## broken probably needs a different cert
-    # - name: Sign macOS Executable
-    #   run: |
-    #     security create-keychain -p ""  build.keychain
-    #     security default-keychain -s build.keychain
-    #     security unlock-keychain -p "" build.keychain
-    #     security import certificate.p12 -k build.keychain -P ${{ secrets.CERT_PASSWORD }} -T /usr/bin/codesign
-    #     codesign --deep --force --verify --verbose --sign "Developer ID Application" dist/AzerothAuctionAssassin
-
-    # - name: Upload macOS Executable to Release
-    #   uses: actions/upload-release-asset@v1
-    #   env:
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #   with:
-    #     upload_url: ${{ needs.build-windows.steps.create_release.outputs.upload_url }}
-    #     asset_path: ./dist/AzerothAuctionAssassin
-    #     asset_name: AzerothAuctionAssassin-macOS
-    #     asset_content_type: application/octet-stream
+    
+    - name: Decode Upload URL
+      run: |
+        echo "decoded_upload_url=$(echo ${{ needs.build-windows.outputs.upload_url_base64 }} | base64 --decode)" >> $GITHUB_ENV
 
     - name: Upload macOS Executable to Release
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ secrets.upload_url }}
-        asset_path: .AzerothAuctionAssassin.py
+        upload_url: ${{ env.decoded_upload_url }}
+        asset_path: ./AzerothAuctionAssassin-windows/AzerothAuctionAssassin/Program.cs
         asset_name: AzerothAuctionAssassin-macOS
         asset_content_type: application/octet-stream
